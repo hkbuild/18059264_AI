@@ -187,19 +187,41 @@ class Dispatcher:
 
       '''this internal method should decide a 'reasonable' cost for the fare. Here, the computation
          is trivial: add a fixed cost (representing a presumed travel time to the fare by a given
-         taxi) then multiply the expected travel time by the profit-sharing ratio. Better methods
-         should improve the expected number of bids and expected profits. The function gets all the
-         fare information, even though currently it's not using all of it, because you may wish to
+         taxi) then multiply the expected travel time by the profit-sharing ratio. function gets all the
+         fare information, even though currently it's not using all of it, becBetter methods
+         should improve the expected number of bids and expected profits. The ause you may wish to
          take into account other details.
       '''
       # TODO - improve costing
       def _costFare(self, fare):
           timeToDestination = self._parent.travelTime(self._parent.getNode(fare.origin[0], fare.origin[1]),
                                                       self._parent.getNode(fare.destination[0], fare.destination[1]))
+          cost = 25
+          available = []
           # if the world is gridlocked, a flat fare applies.
           if timeToDestination < 0:
               return 150
-          return (25 + timeToDestination) / 0.9
+
+          for taxi in self._taxis:
+              # Check if any taxis are available and if so how long remains on current fares and allocated fares
+              allocations = [fare for fare in taxi._availableFares.values() if fare.allocated]
+              if len(allocations) < 2:
+                  available.append(taxi)
+
+          if len(available) > 2:
+              cost += 0
+
+          if len(available) <= 4  and  len(available) >= 2:
+              cost += 5
+
+          if len(available) < 2:
+              cost += 8
+
+          cost = (cost + timeToDestination) / 0.9
+
+
+          return cost
+
 
       # TODO
       # this method decides which taxi to allocate to a given fare. The algorithm here is not a fair allocation

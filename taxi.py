@@ -9,6 +9,9 @@ import heapq
 # origin is notably missing: that's because the Taxi will keep this
 # in a dictionary indexed by fare origin, so we don't need to duplicate that
 # here.
+import numpy.random
+
+
 class FareInfo:
 
     def __init__(self, destination, price):
@@ -322,26 +325,16 @@ class Taxi:
                     del self._availableFares[fare[0]]
                     return
 
-    # _____________________________________________________________________________________________________________________
 
-    ''' HERE IS THE PART THAT YOU NEED TO MODIFY
-    '''
-
-    # TODO
-    # this function should build your route and fill the _path list for each new
-    # journey. Below is a naive depth-first search implementation. You should be able
-    # to do much better than this!
     def _planPath(self, origin, destination, **args):
         if 'explored' not in args:
             args['explored'] = {}
         args['explored'][origin] = None
-
         path = []
         if origin not in self._map:
             return None
         if origin == destination:
             return [origin]
-
         heuristic = lambda x, y: math.sqrt((x[0] - y[0]) ** 2 + (x[1] - y[1]) ** 2)
         explored = set()
         expanded = {heuristic(origin, destination): {origin: [origin]}}
@@ -361,8 +354,8 @@ class Taxi:
                 while len(expTargets) > 0:
                     expTarget = expTargets.pop()
                     xTuple, yTuple = expTarget[1]
-                    estimatedDistance = bestRoute - heuristic(nextNode[0], destination) + xTuple + yTuple + heuristic(expTarget[0],
-                                                                                                                      destination)
+                    estimatedDistance = bestRoute - heuristic(nextNode[0], destination) + xTuple + yTuple +\
+                                        heuristic(expTarget[0], destination)
                     if estimatedDistance in expanded:
                         expanded[estimatedDistance][expTarget[0]] = nextNode[1] + [expTarget[0]]
                     else:
@@ -370,33 +363,46 @@ class Taxi:
 
         return None
 
-        # TODO
-
-    # this function decides whether to offer a bid for a fare. In general you can consider your current position, time,
-    # financial state, the collection and dropoff points, the time the fare called - or indeed any other variable that
-    # may seem relevant to decide whether to bid. The (crude) constraint-satisfaction method below is only intended as
-    # a hint that maybe some form of CSP solver with automated reasoning might be a good way of implementing this. But
-    # other methodologies could work well. For best results you will almost certainly need to use probabilistic reasoning.
     def _bidOnFare(self, time, origin, destination, price):
-        NoCurrentPassengers = self._passenger is None
-        NoAllocatedFares = len([fare for fare in self._availableFares.values() if fare.allocated]) == 0
-        TimeToOrigin = self._world.travelTime(self._loc, self._world.getNode(origin[0], origin[1]))
-        TimeToDestination = self._world.travelTime(self._world.getNode(origin[0], origin[1]),
-                                                   self._world.getNode(destination[1], destination[1]))
-        FiniteTimeToOrigin = TimeToOrigin > 0
-        FiniteTimeToDestination = TimeToDestination > 0
-        CanAffordToDrive = self._account > TimeToOrigin
-        FairPriceToDestination = price > TimeToDestination
-        PriceBetterThanCost = FairPriceToDestination and FiniteTimeToDestination
-        FareExpiryInFuture = self._maxFareWait > self._world.simTime - time
-        EnoughTimeToReachFare = self._maxFareWait - self._world.simTime + time > TimeToOrigin
-        SufficientDrivingTime = FiniteTimeToOrigin and EnoughTimeToReachFare
-        WillArriveOnTime = FareExpiryInFuture and SufficientDrivingTime
-        NotCurrentlyBooked = NoCurrentPassengers and NoAllocatedFares
-        CloseEnough = CanAffordToDrive and WillArriveOnTime
-        Worthwhile = PriceBetterThanCost and NotCurrentlyBooked
-        Bid = CloseEnough and Worthwhile
-        return Bid
+        bidChance = 1
+        allocations = [fare for fare in self._availableFares.values() if fare.allocated]
+        for fare in self._availableFares.items():
+            if fare[1].allocated:
+                nextdest = fare[1].destination
+        originNode = self._world.getNode(origin[0], origin[1])
 
+        if len(allocations) != 0:
+            bidChance -= len(allocations) * 0.1
+        travelTime = self._world.travelTime(self._loc, self._world.getNode(origin[0], origin[1]))
 
+        if self._passenger:
+            if len(allocations) > 1:
+                bidChance = 0
+            elif len(allocations) <= 1:
+                dest = self._path[-1]
+                dest_node = self._world.getNode(dest[0], dest[1])
+                travelTime = self._world.travelTime(dest_node, self._world.getNode(nextdest[0], nextdest[1])) + \
+                              self._world.travelTime(self._world.getNode(nextdest[0], nextdest[1]), originNode)
+            else:
+                dest = self._path[-1]
+                dest_node = self._world.getNode(dest[0], dest[1])
+                next_node = self._world.getNode(allocations[1].destination[0], allocations[1].destination[1])
+                travelTime = self._world.travelTime(self._loc, dest_node) + self._world.travelTime(dest_node, next_node)
 
+        if self._account < travelTime:
+            bidChance = 0
+            #further away from fare = lower chance
+        else:
+            bidChance -= travelTime * .01
+
+        if bidChance > 1:
+            bidChance = 1
+
+        elif bidChance < 0:
+            bidChance = 0
+
+        n = 1 - bidChance
+        #print(bidChance)
+        choices = [True, False]
+        choice = numpy.random.choice(choices, 1, [bidChance, n])
+        return choice
